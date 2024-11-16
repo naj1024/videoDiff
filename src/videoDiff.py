@@ -86,34 +86,36 @@ class VideoStreamApp(QWidget):
         
         # source, live video and file
         self.fps_label = QLabel("FPS: ")
-        self.live_video = QRadioButton("Live video")
+        self.live_video = QRadioButton("Live")
         self.live_video.setChecked(True)
-        self.file_video = QRadioButton("File video")
+        self.file_video = QRadioButton("File")
         self.live_video.toggled.connect(self.update_source_toggle)
         self.file_video.toggled.connect(self.update_source_toggle)
         button_name = self.filename
         if button_name == "":
             button_name = "Open File"
         self.open_button = QPushButton(button_name, self)
+        self.open_button.setToolTip("Choose file to process for file mode")
         self.open_button.clicked.connect(self.open_file_dialog)
 
         # button to grab current frame
         self.grab_button = QPushButton("Grab frame", self)
+        self.grab_button.setToolTip("Grab current video frame for use in static mode")
         self.grab_button.clicked.connect(self.grab_frame)
 
         # source in horizontal layout
-        self.source_layout = QHBoxLayout()
-        self.source_layout.addWidget(self.fps_label)
+        self.source_layout = QVBoxLayout()
         self.source_layout.addWidget(self.grab_button)
         self.source_layout.addWidget(self.live_video)
         self.source_layout.addWidget(self.file_video)
         self.source_layout.addWidget(self.open_button)
 
-        # Create a slider to adjust the delay
+        # Create a slider to adjust the size of the video
         self.slider_sc = QSlider(Qt.Horizontal, self)
         self.slider_sc.setRange(1, 30)  
         self.slider_sc.setValue(int(self.scale * 10))  
         self.slider_sc.valueChanged.connect(self.update_scale)  # Connect slider to handler
+        self.slider_sc.setToolTip("Scale the video")
         self.scale_label = QLabel(f"Scale: {self.scale:.1f}", self)
 
         # Create a slider to adjust the delay
@@ -121,6 +123,7 @@ class VideoStreamApp(QWidget):
         self.slider_d.setRange(0, self.length_of_delay_buffer - 1)  
         self.slider_d.setValue(self.delay)  
         self.slider_d.valueChanged.connect(self.update_delay)  # Connect slider to handler
+        self.slider_d.setToolTip("Frame delay for video difference")
         self.delay_label = QLabel(f"Delay: {self.delay}", self)
 
         # Create a slider to adjust the threshold
@@ -128,61 +131,71 @@ class VideoStreamApp(QWidget):
         self.slider_t.setRange(0, 255)  
         self.slider_t.setValue(self.threshold)  
         self.slider_t.valueChanged.connect(self.update_threshold)  # Connect slider to handler
+        self.slider_t.setToolTip("Threshold for black")
         self.threshold_label = QLabel(f"Threshold: {self.threshold}", self)
 
-        # Create a slider to adjust the alpha
-        # self.slider_a = QSlider(Qt.Horizontal, self)
-        # self.slider_a.setRange(0, 100)  
-        # self.slider_a.setValue(int(self.alpha * 100))  
-        # self.slider_a.valueChanged.connect(self.update_alpha)  # Connect slider to handler
-        # self.alpha_label = QLabel(f"Alpha: {self.alpha}", self)
-
-        # Arrange the sliders and their labels in a horizontal layout
+        # Arrange the sliders and their labels
+        slider_layout1 = QHBoxLayout()
+        slider_layout1.addWidget(self.scale_label)
+        slider_layout1.addWidget(self.slider_sc)
+        slider_layout2 = QHBoxLayout()
+        slider_layout2.addWidget(self.delay_label)
+        slider_layout2.addWidget(self.slider_d)
+        slider_layout3 = QHBoxLayout()
+        slider_layout3.addWidget(self.threshold_label)
+        slider_layout3.addWidget(self.slider_t)
         slider_layout = QVBoxLayout()
-        slider_layout.addWidget(self.scale_label)
-        slider_layout.addWidget(self.slider_sc)
-        slider_layout.addWidget(self.delay_label)
-        slider_layout.addWidget(self.slider_d)
-        slider_layout.addWidget(self.threshold_label)
-        slider_layout.addWidget(self.slider_t)
-        # slider_layout.addWidget(self.alpha_label)
-        # slider_layout.addWidget(self.slider_a)
+        slider_layout.addLayout(slider_layout1)
+        slider_layout.addLayout(slider_layout2)
+        slider_layout.addLayout(slider_layout3)
+
+        fps_layout = QVBoxLayout()
+        fps_layout.addWidget(self.fps_label)
 
         # toggle button 
         self.check_g = QCheckBox("Gray", self)
         self.check_g.setCheckable(True)  # Make the button checkable
         self.check_g.setChecked(self.gray_scale)  # Set initial checked state
         self.check_g.stateChanged.connect(self.check_gray)  # Connect toggle signal
+        self.check_g.setToolTip("Set frames to gray scale")
         
         self.check_s = QCheckBox("Ghost", self)
         self.check_s.setCheckable(True)  # Make the button checkable
         self.check_s.setChecked(self.ghost)  # Set initial checked state
         self.check_s.stateChanged.connect(self.check_spectre)  # Connect toggle signal
+        self.check_s.setToolTip("Overlay original frame as a ghost")
         
         self.check_l = QCheckBox("Loop", self)
         self.check_l.setCheckable(True)  # Make the button checkable
         self.check_l.setChecked(self.loop_file)  # Set initial checked state
         self.check_l.stateChanged.connect(self.check_loop_file)  # Connect toggle signal
+        self.check_l.setToolTip("Loop file input")
 
         self.check_gr = QCheckBox("Static", self)
         self.check_gr.setCheckable(True)  # Make the button checkable
         self.check_gr.setChecked(self.use_static)  # Set initial checked state
         self.check_gr.stateChanged.connect(self.check_grabbed)  # Connect toggle signal
+        self.check_gr.setToolTip("Use grabbed frame as difference frame")
 
         # layout the checkboxes
-        check_layout = QHBoxLayout()
+        check_layout = QVBoxLayout()
         check_layout.addWidget(self.check_g)
         check_layout.addWidget(self.check_s)
         check_layout.addWidget(self.check_l)
         check_layout.addWidget(self.check_gr)
 
         # Arrange everything together
-        layout = QVBoxLayout()
-        layout.addWidget(self.video_label)
-        layout.addLayout(self.source_layout)
-        layout.addLayout(check_layout)
-        layout.addLayout(slider_layout)
-        self.setLayout(layout)
+        layoutV = QVBoxLayout()
+        layoutV.addLayout(self.source_layout)
+        layoutV.addLayout(check_layout)
+        layoutV.addLayout(slider_layout)
+        layoutV.addLayout(fps_layout)
+
+        layoutH = QHBoxLayout()
+        layoutH.addWidget(self.video_label)
+        layoutH.addLayout(layoutV)
+
+        self.setLayout(layoutH)
 
         # Set the window title and show the app
         self.setWindowTitle("OpenCV video delay effects")
