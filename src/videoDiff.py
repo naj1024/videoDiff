@@ -36,9 +36,12 @@ class VideoStreamApp(QWidget):
         self.use_static = False          # Use static frame, grabbed
         self.length_of_delay_buffer = 50 # maximum delay
         self.delay = 20                  # frame delay for difference against
+        self.dilate = 0                  # dilation after difference
         self.alpha = 0.5                 # % of delayed frame to subtract on difference
         self.threshold = 0               # value below which things are set to black
         self.scale = 1.0                 # scale video frames, 0.1 to 3.0
+        self.contours = False            # find a contour around changes
+        self.gamma = 1                   # for images
 
         self.frame_buffer = deque(maxlen = self.length_of_delay_buffer)
 
@@ -120,11 +123,19 @@ class VideoStreamApp(QWidget):
 
         # Create a slider to adjust the delay
         self.slider_d = QSlider(Qt.Horizontal, self)
-        self.slider_d.setRange(0, self.length_of_delay_buffer - 1)  
+        self.slider_d.setRange(1, self.length_of_delay_buffer - 1)  
         self.slider_d.setValue(self.delay)  
         self.slider_d.valueChanged.connect(self.update_delay)  # Connect slider to handler
         self.slider_d.setToolTip("Frame delay for video difference")
         self.delay_label = QLabel(f"Delay: {self.delay}", self)
+
+        # Create a slider to adjust the delay
+        self.slider_di = QSlider(Qt.Horizontal, self)
+        self.slider_di.setRange(0, 20)  
+        self.slider_di.setValue(self.dilate)  
+        self.slider_di.valueChanged.connect(self.update_dilate)  # Connect slider to handler
+        self.slider_di.setToolTip("Dilate the difference")
+        self.dilate_label = QLabel(f"Dilate: {self.dilate}", self)
 
         # Create a slider to adjust the threshold
         self.slider_t = QSlider(Qt.Horizontal, self)
@@ -142,12 +153,16 @@ class VideoStreamApp(QWidget):
         slider_layout2.addWidget(self.delay_label)
         slider_layout2.addWidget(self.slider_d)
         slider_layout3 = QHBoxLayout()
-        slider_layout3.addWidget(self.threshold_label)
-        slider_layout3.addWidget(self.slider_t)
+        slider_layout3.addWidget(self.dilate_label)
+        slider_layout3.addWidget(self.slider_di)
+        slider_layout4 = QHBoxLayout()
+        slider_layout4.addWidget(self.threshold_label)
+        slider_layout4.addWidget(self.slider_t)
         slider_layout = QVBoxLayout()
         slider_layout.addLayout(slider_layout1)
         slider_layout.addLayout(slider_layout2)
         slider_layout.addLayout(slider_layout3)
+        slider_layout.addLayout(slider_layout4)
 
         fps_layout = QVBoxLayout()
         fps_layout.addWidget(self.fps_label)
@@ -177,12 +192,19 @@ class VideoStreamApp(QWidget):
         self.check_gr.stateChanged.connect(self.check_grabbed)  # Connect toggle signal
         self.check_gr.setToolTip("Use grabbed frame as difference frame")
 
+        self.check_ct = QCheckBox("Contour", self)
+        self.check_ct.setCheckable(True)  # Make the button checkable
+        self.check_ct.setChecked(self.contours)  # Set initial checked state
+        self.check_ct.stateChanged.connect(self.check_contours)  # Connect toggle signal
+        self.check_ct.setToolTip("Draw contours around changes")
+
         # layout the checkboxes
         check_layout = QVBoxLayout()
         check_layout.addWidget(self.check_g)
         check_layout.addWidget(self.check_s)
         check_layout.addWidget(self.check_l)
         check_layout.addWidget(self.check_gr)
+        check_layout.addWidget(self.check_ct)
 
         # Arrange everything together
         layoutV = QVBoxLayout()
@@ -242,6 +264,10 @@ class VideoStreamApp(QWidget):
         self.delay = value
         self.delay_label.setText(f"Delay: {self.delay}")
 
+    def update_dilate(self, value: int):
+        self.dilate = value
+        self.dilate_label.setText(f"Dilate: {self.dilate}")
+
     def update_threshold(self, value: int):
         self.threshold = value
         self.threshold_label.setText(f"Threshold: {self.threshold}")
@@ -263,6 +289,13 @@ class VideoStreamApp(QWidget):
 
     def check_grabbed(self, state: bool):
         self.use_static = state == Qt.Checked
+
+    def check_contours(self, state:bool):
+        self.contours = state == Qt.Checked
+        if self.contours:
+            self.gray_scale = True # image has to be gray scale for this
+            self.check_g.setChecked(self.gray_scale)
+            self.frame_buffer.clear()  # drop previous frames as they may not be gray scale
 
     def update_frame(self):
         if self.cap.isOpened():
@@ -296,8 +329,20 @@ class VideoStreamApp(QWidget):
                     else:
                         previous_frame = np.invert(frame)
             
-                diff = self.difference(frame, previous_frame)
-                
+                diff, motion = self.difference(frame, previous_frame)
+
+                # draw boxes around movement
+                if motion != None:
+                    for contour in motion:
+                        (x, y, w, h) = cv2.boundingRect(contour)
+                        cv2.rectangle(img=diff, pt1=(x, y), pt2=(x + w, y + h), color=(255, 0, 0), thickness=2)
+
+                # add back ghost original image
+                if self.ghost:
+                    alpha2 = 0.8
+                    beta2 = 1 - alpha2
+                    diff = cv2.addWeighted(diff, alpha2, frame, beta2, self.gamma)
+
                 # Convert the frame to QImage for PyQt5
                 if self.gray_scale:
                     h, w = diff.shape
@@ -316,24 +361,23 @@ class VideoStreamApp(QWidget):
         self.cap.release()
         event.accept()
 
-    def difference(self, array1: np.ndarray, array2:np.ndarray):
+    def difference(self, array1: np.ndarray, array2:np.ndarray) -> np.ndarray:
         # blend the two images together, they are time shifted N frames
         beta  = 1.0 - self.alpha   # 2nd image %
-        gamma = 30.0
-        diff = cv2.addWeighted(array2, self.alpha, array1, beta, gamma)
+        diff = cv2.addWeighted(array2, self.alpha, array1, beta, self.gamma)
 
-        # add back ghost original image
-        if self.ghost:
-            alpha2 = 0.8
-            beta2 = 1 - alpha2
-            diff = cv2.addWeighted(diff, alpha2, array1, beta2, gamma)
-
-        # print(np.min(diff), np.max(diff), np.median(diff), np.mean(diff), np.std(diff))
+        # enhance differences
+        kernel = np.ones((self.dilate, self.dilate))
+        diff = cv2.dilate(diff, kernel, iterations=1)
 
         # threshold
         diff = np.where(diff >= self.threshold, diff, 0)
 
-        return diff
+        motion = None
+        if self.contours:
+            motion, _ = cv2.findContours(image=diff, mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
+
+        return diff, motion
 
 # Run the application
 if __name__ == '__main__':
