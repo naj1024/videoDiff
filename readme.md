@@ -1,0 +1,1 @@
+Simple python script to perform simple time delay effects on video files or live streams.
